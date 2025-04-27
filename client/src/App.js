@@ -35,9 +35,11 @@ const App = () => {
               <Route path="/" element={<PrivateRoute />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<RoleBasedDashboard />} />
+                <Route path="buyer-dashboard" element={<BuyerDashboard />} />
+                <Route path="seller-dashboard" element={<SellerDashboard />} />
                 <Route path="land/:id" element={<LandDetails />} />
                 <Route path="register-land" element={<RegisterLand />} />
-                <Route path="purchase-requests/:landId" element={<PurchaseRequests />} />
+                <Route path="land/:id/purchase-requests" element={<PurchaseRequests />} />
               </Route>
             </Routes>
           </motion.div>
@@ -57,9 +59,9 @@ function RoleBasedDashboard() {
 
   switch (user.role) {
     case 'buyer':
-      return <BuyerDashboard />;
+      return <Navigate to="/buyer-dashboard" replace />;
     case 'seller':
-      return <SellerDashboard />;
+      return <Navigate to="/seller-dashboard" replace />;
     default:
       return <Navigate to="/login" replace />;
   }

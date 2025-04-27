@@ -21,10 +21,6 @@ const landSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    documentHash: {
-        type: String,
-        required: false
-    },
     owner: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -32,15 +28,23 @@ const landSchema = new mongoose.Schema({
     },
     blockchainId: {
         type: Number,
-        required: true
+        default: 0
     },
     isVerified: {
         type: Boolean,
-        default: true
+        default: false
     },
     isForSale: {
         type: Boolean,
         default: true
+    },
+    imageHash: {
+        type: String,
+        required: true
+    },
+    documentHash: {
+        type: String,
+        required: true
     },
     purchaseRequests: [{
         buyer: {
@@ -50,7 +54,7 @@ const landSchema = new mongoose.Schema({
         },
         status: {
             type: String,
-            enum: ['pending', 'approved', 'rejected'],
+            enum: ['pending', 'approved', 'rejected', 'completed'],
             default: 'pending'
         },
         timestamp: {
@@ -61,5 +65,10 @@ const landSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Add index for faster queries
+landSchema.index({ owner: 1 });
+landSchema.index({ 'purchaseRequests.buyer': 1 });
+landSchema.index({ isForSale: 1, isVerified: 1 });
 
 module.exports = mongoose.model('Land', landSchema); 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
@@ -9,104 +9,100 @@ const Login = () => {
     email: '',
     password: ''
   });
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
 
     try {
-      const user = await login(formData.email, formData.password);
-      console.log('Login successful:', user);
-      
-      // Redirect based on user role
-      if (user.role === 'buyer') {
-        navigate('/dashboard');
-      } else if (user.role === 'seller') {
-        navigate('/dashboard');
+      const result = await login(formData.email, formData.password);
+      if (result.success) {
+        // Redirect based on user role
+        if (result.user.role === 'seller') {
+          navigate('/seller-dashboard');
+        } else {
+          navigate('/buyer-dashboard');
+        }
       } else {
-        navigate('/');
+        setError(result.message);
       }
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.response?.data?.message || 'Login failed. Please try again.');
+      setError(error.response?.data?.message || 'Error logging in. Please try again later.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
-        </div>
-        
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-md mx-auto">
+        <h1 className="text-3xl font-bold mb-8 text-center">Login</h1>
+
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-6">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">Email address</label>
+              <label className="block text-gray-700 font-semibold mb-2">Email</label>
               <input
-                id="email"
-                name="email"
                 type="email"
-                required
+                name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
+              <label className="block text-gray-700 font-semibold mb-2">Password</label>
               <input
-                id="password"
-                name="password"
                 type="password"
-                required
+                name="password"
                 value={formData.password}
                 onChange={handleChange}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-          </div>
 
-          <div>
             <button
               type="submit"
               disabled={loading}
-              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+              className={`w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors ${
                 loading ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? 'Logging in...' : 'Login'}
             </button>
           </div>
-
-          <div className="text-sm text-center">
-            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
-              Don't have an account? Register
-            </Link>
-          </div>
         </form>
+
+        <p className="text-center mt-4">
+          Don't have an account?{' '}
+          <button
+            onClick={() => navigate('/register')}
+            className="text-blue-500 hover:text-blue-600"
+          >
+            Register here
+          </button>
+        </p>
       </div>
     </div>
   );

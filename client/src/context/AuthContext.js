@@ -12,24 +12,25 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchUser(token);
+    } else {
+      setLoading(false);
+    }
   }, []);
 
-  const checkAuth = async () => {
+  const fetchUser = async (token) => {
     try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const response = await axios.get('http://localhost:5000/api/auth/me', {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        setUser(response.data);
-      }
+      const response = await axios.get('http://localhost:5000/api/auth/me', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setUser(response.data);
     } catch (error) {
-      console.error('Auth check error:', error);
+      console.error('Error fetching user:', error);
       localStorage.removeItem('token');
-      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -41,13 +42,17 @@ export const AuthProvider = ({ children }) => {
         email,
         password
       });
+
       const { token, user } = response.data;
       localStorage.setItem('token', token);
       setUser(user);
-      return user;
+      return { success: true, user };
     } catch (error) {
       console.error('Login error:', error);
-      throw error;
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error logging in'
+      };
     }
   };
 
@@ -57,10 +62,13 @@ export const AuthProvider = ({ children }) => {
       const { token, user } = response.data;
       localStorage.setItem('token', token);
       setUser(user);
-      return user;
+      return { success: true, user };
     } catch (error) {
       console.error('Registration error:', error);
-      throw error;
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error registering user'
+      };
     }
   };
 
@@ -74,13 +82,12 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     register,
-    logout,
-    checkAuth
+    logout
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 }; 

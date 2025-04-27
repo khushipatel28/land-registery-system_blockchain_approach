@@ -1,92 +1,102 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 const PurchaseRequests = () => {
-  const { user } = useAuth();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const { landId } = useParams();
+  const { user } = useAuth();
   const [land, setLand] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [status, setStatus] = useState({});
 
   useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     fetchLandAndRequests();
-  }, [landId]);
+  }, [id, user, navigate]);
 
   const fetchLandAndRequests = async () => {
     try {
+      setLoading(true);
+      setError('');
       const token = localStorage.getItem('token');
-      const [landResponse, requestsResponse] = await Promise.all([
-        axios.get(`http://localhost:5000/api/lands/${landId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get(`http://localhost:5000/api/lands/${landId}/purchase-requests`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      ]);
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      // Fetch land details
+      const landResponse = await axios.get(`http://localhost:5000/api/lands/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       setLand(landResponse.data);
+
+      // Fetch purchase requests
+      const requestsResponse = await axios.get(`http://localhost:5000/api/lands/${id}/purchase-requests`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       setRequests(requestsResponse.data);
-      setLoading(false);
     } catch (error) {
-      setError('Error fetching land and purchase requests');
+      console.error('Error fetching land and purchase requests:', error);
+      if (error.response?.status === 403) {
+        setError('You are not authorized to view purchase requests. Please log in again.');
+        setTimeout(() => navigate('/login'), 2000);
+      } else {
+        setError(error.response?.data?.message || 'Error fetching purchase requests. Please try again later.');
+      }
+    } finally {
       setLoading(false);
     }
   };
 
   const handleApprove = async (requestId) => {
     try {
+      setError('');
       const token = localStorage.getItem('token');
-      await axios.post(
-        `http://localhost:5000/api/lands/${landId}/purchase-requests/${requestId}/approve`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      await axios.post(`http://localhost:5000/api/lands/${id}/purchase-requests/${requestId}/approve`, {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
         }
-      );
-      setStatus(prev => ({
-        ...prev,
-        [requestId]: 'Approved successfully!'
-      }));
-      // Refresh the data
-      fetchLandAndRequests();
+      });
+      fetchLandAndRequests(); // Refresh the data
     } catch (error) {
-      setStatus(prev => ({
-        ...prev,
-        [requestId]: error.response?.data?.message || 'Error approving request'
-      }));
+      console.error('Error approving purchase request:', error);
+      setError(error.response?.data?.message || 'Error approving purchase request. Please try again later.');
     }
   };
 
   const handleReject = async (requestId) => {
     try {
+      setError('');
       const token = localStorage.getItem('token');
-      await axios.post(
-        `http://localhost:5000/api/lands/${landId}/purchase-requests/${requestId}/reject`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      await axios.post(`http://localhost:5000/api/lands/${id}/purchase-requests/${requestId}/reject`, {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
         }
-      );
-      setStatus(prev => ({
-        ...prev,
-        [requestId]: 'Rejected successfully!'
-      }));
-      // Refresh the data
-      fetchLandAndRequests();
+      });
+      fetchLandAndRequests(); // Refresh the data
     } catch (error) {
-      setStatus(prev => ({
-        ...prev,
-        [requestId]: error.response?.data?.message || 'Error rejecting request'
-      }));
+      console.error('Error rejecting purchase request:', error);
+      setError(error.response?.data?.message || 'Error rejecting purchase request. Please try again later.');
     }
   };
 
@@ -98,114 +108,78 @@ const PurchaseRequests = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
   if (!land) {
     return (
-      <div className="text-center text-gray-500 mt-8">
-        Land not found
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center text-gray-500">Land not found</div>
       </div>
     );
   }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8 text-center">Purchase Requests</h1>
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Purchase Requests for {land.title}</h1>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-8">
-        {/* Land Details */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-lg shadow-lg p-6"
-        >
-          <h2 className="text-xl font-bold mb-4">Land Details</h2>
-          <div className="space-y-2">
-            <p className="text-gray-700">
-              <span className="font-semibold">Title:</span> {land.title}
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Description:</span> {land.description}
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Location:</span> {land.location}
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Size:</span> {land.size} sq ft
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Price:</span> {land.price} ETH
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Blockchain ID:</span> {land.blockchainId}
-            </p>
-            <p className="text-gray-700">
-              <span className="font-semibold">Status:</span>{' '}
-              <span className={land.isForSale ? 'text-green-600' : 'text-red-600'}>
-                {land.isForSale ? 'For Sale' : 'Sold'}
-              </span>
-            </p>
+        {requests.length === 0 ? (
+          <div className="text-center text-gray-500 mt-8">
+            No purchase requests yet
           </div>
-        </motion.div>
-
-        {/* Purchase Requests */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-lg shadow-lg p-6"
-        >
-          <h2 className="text-xl font-bold mb-4">Purchase Requests</h2>
-          {requests.length === 0 ? (
-            <p className="text-gray-500">No purchase requests yet</p>
-          ) : (
-            <div className="space-y-4">
-              {requests.map(request => (
-                <div
-                  key={request._id}
-                  className="border rounded-lg p-4"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-semibold">{request.buyer.name}</p>
-                      <p className="text-gray-600">{request.buyer.email}</p>
-                      <p className="text-gray-600">Wallet Address: {request.buyer.walletAddress}</p>
-                      <p className="text-gray-600">Status: {request.status}</p>
-                      <p className="text-gray-600">Blockchain Status: {request.blockchainStatus}</p>
-                      <p className="text-gray-600">
-                        Requested: {new Date(request.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                    {request.status === 'pending' && (
-                      <div className="space-x-2">
-                        <button
-                          onClick={() => handleApprove(request._id)}
-                          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReject(request._id)}
-                          className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
+        ) : (
+          <div className="space-y-4">
+            {requests.map((request) => (
+              <div key={request._id} className="bg-white rounded-lg shadow-lg p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-xl font-semibold mb-2">
+                      Request from {request.buyer?.name || 'Unknown Buyer'}
+                    </h3>
+                    <p className="text-gray-600">
+                      Requested on: {new Date(request.timestamp).toLocaleString()}
+                    </p>
+                    <p className="text-gray-600">
+                      Status: <span className={request.status === 'pending' ? 'text-yellow-600' : request.status === 'approved' ? 'text-green-600' : 'text-red-600'}>
+                        {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                      </span>
+                    </p>
+                    <p className="text-gray-600">
+                      Buyer's Email: {request.buyer?.email || 'Not available'}
+                    </p>
+                    <p className="text-gray-600">
+                      Buyer's Wallet: {request.buyer?.walletAddress || 'Not available'}
+                    </p>
                   </div>
-                  {status[request._id] && (
-                    <div className="mt-2 p-2 bg-blue-100 text-blue-700 rounded">
-                      {status[request._id]}
+                  {request.status === 'pending' && (
+                    <div className="space-x-2">
+                      <button
+                        onClick={() => handleApprove(request._id)}
+                        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(request._id)}
+                        className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors"
+                      >
+                        Reject
+                      </button>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

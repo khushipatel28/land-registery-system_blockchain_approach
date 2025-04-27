@@ -5,6 +5,9 @@ const dotenv = require('dotenv');
 const path = require('path');
 const { ethers } = require('ethers');
 const LandRegistry = require(path.join(__dirname, '../blockchain/artifacts/contracts/LandRegistry.sol/LandRegistry.json'));
+const multer = require('multer');
+const landRoutes = require('./routes/land');
+const userRoutes = require('./routes/user');
 
 // Load environment variables
 dotenv.config();
@@ -20,6 +23,38 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Configure multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow images
+    if (file.fieldname === 'image') {
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed for the image field'));
+      }
+    }
+    // Allow documents
+    else if (file.fieldname === 'document') {
+      if (file.mimetype === 'application/pdf' || 
+          file.mimetype === 'application/msword' || 
+          file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        cb(null, true);
+      } else {
+        cb(new Error('Only PDF and Word documents are allowed for the document field'));
+      }
+    }
+    else {
+      cb(new Error('Invalid field name'));
+    }
+  }
+});
 
 // Verify blockchain connection
 async function verifyBlockchainConnection() {
@@ -87,8 +122,8 @@ mongoose.connect(process.env.MONGODB_URI, {
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/lands', require('./routes/lands'));
-// app.use('/api/users', require('./routes/users'));
+app.use('/api/lands', landRoutes);
+app.use('/api/users', userRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -125,6 +160,14 @@ app.use((err, req, res, next) => {
             message: 'Blockchain operation failed',
             error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    }
+
+    // Handle multer errors
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ message: 'File size too large. Maximum size is 5MB.' });
+        }
+        return res.status(400).json({ message: err.message });
     }
 
     // Default error response

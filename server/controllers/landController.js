@@ -47,11 +47,11 @@ try {
 // Register new land
 exports.registerLand = async (req, res) => {
     try {
-        const { title, description, location, size, price, document } = req.body;
+        const { title, description, location, size, price } = req.body;
         const owner = req.user.userId;
 
         // Validate required fields
-        if (!title || !description || !location || !size || !price || !document) {
+        if (!title || !description || !location || !size || !price || !req.files?.image || !req.files?.document) {
             return res.status(400).json({ 
                 message: 'All fields are required',
                 missing: {
@@ -60,7 +60,8 @@ exports.registerLand = async (req, res) => {
                     location: !location,
                     size: !size,
                     price: !price,
-                    document: !document
+                    image: !req.files?.image,
+                    document: !req.files?.document
                 }
             });
         }
@@ -112,7 +113,7 @@ exports.registerLand = async (req, res) => {
                 const contractWithSigner = contract.connect(signer);
                 
                 // Generate document hash
-                const documentHash = Buffer.from(document).toString('base64').slice(0, 32);
+                const documentHash = Buffer.from(req.files.document[0].buffer).toString('base64').slice(0, 32);
                 
                 console.log('Sending transaction to blockchain...');
                 console.log('Transaction parameters:', {
@@ -147,8 +148,9 @@ exports.registerLand = async (req, res) => {
             console.log('Blockchain not available, proceeding with database registration only');
         }
 
-        // Generate a simple document hash from the document data
-        const documentHash = Buffer.from(document).toString('base64').slice(0, 32);
+        // Generate hashes for both image and document
+        const imageHash = Buffer.from(req.files.image[0].buffer).toString('base64').slice(0, 32);
+        const documentHash = Buffer.from(req.files.document[0].buffer).toString('base64').slice(0, 32);
 
         // Save land in database
         const land = new Land({
@@ -160,7 +162,8 @@ exports.registerLand = async (req, res) => {
             owner,
             blockchainId: blockchainId || 0, // Use 0 if blockchain registration failed
             isVerified: true, // Set to true since we're using blockchain verification
-            documentHash // Add the document hash
+            imageHash,
+            documentHash
         });
 
         await land.save();
@@ -230,8 +233,35 @@ exports.getLandById = async (req, res) => {
 // Get lands by owner
 exports.getLandsByOwner = async (req, res) => {
     try {
-        const lands = await Land.find({ owner: req.user.userId })
+        const owner = req.user.userId;
+        console.log('Fetching lands for owner:', owner);
+
+        const lands = await Land.find({ owner })
+            .populate('owner', 'name email walletAddress')
             .sort({ createdAt: -1 });
+
+        console.log('Found lands:', lands.length);
+
+        // Verify lands on blockchain
+        if (provider && contract) {
+            for (let land of lands) {
+                if (land.blockchainId) {
+                    try {
+                        const landDetails = await contract.getLandDetails(land.blockchainId);
+                        // Update verification status in database if it differs from blockchain
+                        if (land.isVerified !== landDetails.isVerified) {
+                            land.isVerified = landDetails.isVerified;
+                            await land.save();
+                        }
+                    } catch (error) {
+                        console.error('Blockchain verification error for land', land._id, ':', error);
+                        // If we can't verify on blockchain, keep the database status
+                        continue;
+                    }
+                }
+            }
+        }
+
         res.json(lands);
     } catch (error) {
         console.error('Get owner lands error:', error);
@@ -251,6 +281,8 @@ exports.getAvailableLands = async (req, res) => {
         })
         .populate('owner', 'name email walletAddress')
         .sort({ createdAt: -1 });
+
+        console.log('Found available lands:', lands.length); // Debug log
 
         // Verify lands on blockchain
         if (provider && contract) {
@@ -275,7 +307,7 @@ exports.getAvailableLands = async (req, res) => {
         // Filter out unverified lands after blockchain check
         const verifiedLands = lands.filter(land => land.isVerified);
 
-        console.log('Found', verifiedLands.length, 'verified lands');
+        console.log('Returning verified lands:', verifiedLands.length); // Debug log
         
         res.json(verifiedLands);
     } catch (error) {
@@ -290,61 +322,129 @@ exports.getAvailableLands = async (req, res) => {
 // Request purchase of land
 exports.requestPurchase = async (req, res) => {
     try {
-        const land = await Land.findById(req.params.id);
+        console.log('Purchase request received for land:', req.params.id);
+        console.log('User ID:', req.user.userId);
+
+        // Validate land ID
+        if (!req.params.id) {
+            console.log('Land ID is missing');
+            return res.status(400).json({ message: 'Land ID is required' });
+        }
+
+        // Find land
+        const land = await Land.findById(req.params.id).populate('owner', 'name email walletAddress');
         if (!land) {
+            console.log('Land not found');
             return res.status(404).json({ message: 'Land not found' });
         }
 
+        console.log('Found land:', {
+            id: land._id,
+            title: land.title,
+            owner: land.owner._id,
+            isForSale: land.isForSale
+        });
+
         if (!land.isForSale) {
+            console.log('Land is not for sale');
             return res.status(400).json({ message: 'Land is not available for purchase' });
         }
 
-        // Get buyer's wallet address
+        // Get buyer
         const buyer = await User.findById(req.user.userId);
-        if (!buyer || !buyer.walletAddress) {
+        if (!buyer) {
+            console.log('Buyer not found');
+            return res.status(404).json({ message: 'Buyer not found' });
+        }
+
+        console.log('Found buyer:', {
+            id: buyer._id,
+            name: buyer.name,
+            walletAddress: buyer.walletAddress
+        });
+
+        if (!buyer.walletAddress) {
+            console.log('Buyer wallet address not found');
             return res.status(400).json({ message: 'Buyer wallet address not found' });
         }
 
-        // Check if user already has a pending request
+        // Check for existing request
         const existingRequest = land.purchaseRequests.find(
             request => request.buyer.toString() === req.user.userId && request.status === 'pending'
         );
 
         if (existingRequest) {
+            console.log('User already has a pending request');
             return res.status(400).json({ message: 'You already have a pending purchase request' });
         }
 
-        // Try to send purchase request on blockchain if available
-        if (provider && contract && land.blockchainId) {
-            try {
-                const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-                const contractWithSigner = contract.connect(signer);
-                
-                console.log('Sending purchase request to blockchain...');
-                const tx = await contractWithSigner.sendPurchaseRequest(land.blockchainId);
-                console.log('Transaction sent:', tx.hash);
-                
-                console.log('Waiting for transaction confirmation...');
-                await tx.wait();
-                console.log('Transaction confirmed');
-            } catch (blockchainError) {
-                console.error('Blockchain error:', blockchainError);
-                // Continue with database registration even if blockchain fails
-                console.log('Continuing with database registration only');
-            }
-        }
-
-        // Add purchase request to database
-        land.purchaseRequests.push({
+        // Create new request
+        const newRequest = {
             buyer: req.user.userId,
             status: 'pending',
             timestamp: new Date()
-        });
+        };
 
-        await land.save();
+        // Add request to land
+        if (!land.purchaseRequests) {
+            land.purchaseRequests = [];
+        }
+
+        // Use $push to add the request
+        const updatedLand = await Land.findByIdAndUpdate(
+            land._id,
+            { $push: { purchaseRequests: newRequest } },
+            { new: true }
+        );
+
+        if (!updatedLand) {
+            console.log('Failed to update land with purchase request');
+            return res.status(500).json({ message: 'Failed to save purchase request' });
+        }
+
         console.log('Purchase request saved to database');
 
-        res.json({ message: 'Purchase request sent successfully' });
+        // Add notification for seller
+        try {
+            const seller = await User.findById(land.owner);
+            if (seller) {
+                if (!seller.notifications) {
+                    seller.notifications = [];
+                }
+                seller.notifications.push({
+                    type: 'purchase_approved',
+                    message: `New purchase request for ${land.title}`,
+                    landId: land._id
+                });
+                await seller.save();
+                console.log('Notification added for seller');
+            }
+        } catch (sellerError) {
+            console.error('Error adding seller notification:', sellerError);
+            // Continue even if notification fails
+        }
+
+        // Add notification for buyer
+        try {
+            if (!buyer.notifications) {
+                buyer.notifications = [];
+            }
+            buyer.notifications.push({
+                type: 'purchase_approved',
+                message: `Your purchase request for ${land.title} has been sent`,
+                landId: land._id
+            });
+            await buyer.save();
+            console.log('Notification added for buyer');
+        } catch (buyerError) {
+            console.error('Error adding buyer notification:', buyerError);
+            // Continue even if notification fails
+        }
+
+        res.json({ 
+            message: 'Purchase request sent successfully',
+            request: newRequest
+        });
     } catch (error) {
         console.error('Purchase request error:', error);
         res.status(500).json({ 
@@ -382,68 +482,274 @@ exports.getPurchaseRequests = async (req, res) => {
 // Approve purchase request
 exports.approvePurchase = async (req, res) => {
     try {
-        const land = await Land.findById(req.params.id);
+        console.log('Approving purchase request:', {
+            landId: req.params.id,
+            requestId: req.params.requestId
+        });
+
+        // Find land and populate necessary fields
+        const land = await Land.findById(req.params.id)
+            .populate('owner', 'name email walletAddress')
+            .populate('purchaseRequests.buyer', 'name email walletAddress');
+
         if (!land) {
+            console.log('Land not found');
             return res.status(404).json({ message: 'Land not found' });
         }
 
-        // Only land owner can approve purchase requests
-        if (land.owner.toString() !== req.user.userId) {
-            return res.status(403).json({ message: 'Not authorized' });
+        // Verify seller is the land owner
+        if (land.owner._id.toString() !== req.user.userId) {
+            console.log('Unauthorized: User is not the land owner');
+            return res.status(403).json({ message: 'Not authorized to approve purchase requests' });
         }
 
-        const requestId = req.params.requestId;
-        const purchaseRequest = land.purchaseRequests.id(requestId);
-
+        // Find the purchase request
+        const purchaseRequest = land.purchaseRequests.id(req.params.requestId);
         if (!purchaseRequest) {
+            console.log('Purchase request not found');
             return res.status(404).json({ message: 'Purchase request not found' });
         }
 
         if (purchaseRequest.status !== 'pending') {
+            console.log('Purchase request is not pending');
             return res.status(400).json({ message: 'Purchase request is not pending' });
         }
 
-        // Get buyer's wallet address
+        // Get buyer's details
         const buyer = await User.findById(purchaseRequest.buyer);
         if (!buyer || !buyer.walletAddress) {
+            console.log('Buyer or buyer wallet address not found');
             return res.status(400).json({ message: 'Buyer wallet address not found' });
         }
 
-        // Try to approve on blockchain if available
-        if (provider && contract && land.blockchainId) {
-            try {
-                const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-                const contractWithSigner = contract.connect(signer);
-                
-                console.log('Sending approval transaction to blockchain...');
-                const tx = await contractWithSigner.approveRequest(
-                    land.blockchainId,
-                    buyer.walletAddress
-                );
-                console.log('Transaction sent:', tx.hash);
-                
-                console.log('Waiting for transaction confirmation...');
-                await tx.wait();
-                console.log('Transaction confirmed');
-            } catch (blockchainError) {
-                console.error('Blockchain error:', blockchainError);
-                // Continue with database update even if blockchain fails
-                console.log('Continuing with database update only');
+        // Update the purchase request status using findByIdAndUpdate
+        const updatedLand = await Land.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: {
+                    'purchaseRequests.$[elem].status': 'approved'
+                }
+            },
+            {
+                arrayFilters: [{ 'elem._id': req.params.requestId }],
+                new: true
             }
+        );
+
+        if (!updatedLand) {
+            console.log('Failed to update purchase request status');
+            return res.status(500).json({ message: 'Failed to update purchase request status' });
         }
 
-        // Update land ownership in database
-        land.owner = purchaseRequest.buyer;
-        land.isForSale = false;
-        purchaseRequest.status = 'approved';
-        await land.save();
-        console.log('Land ownership updated in database');
+        console.log('Purchase request approved and saved');
 
-        res.json({ message: 'Land ownership transferred successfully' });
+        // Add notification for buyer
+        try {
+            if (!buyer.notifications) {
+                buyer.notifications = [];
+            }
+            buyer.notifications.push({
+                type: 'purchase_approved',
+                message: `Your purchase request for ${land.title} has been approved. Please complete the payment of ${land.price} ETH.`,
+                landId: land._id
+            });
+            await buyer.save();
+            console.log('Notification added for buyer');
+        } catch (buyerError) {
+            console.error('Error adding buyer notification:', buyerError);
+            // Continue even if notification fails
+        }
+
+        // Add notification for seller
+        try {
+            const seller = await User.findById(land.owner);
+            if (seller) {
+                if (!seller.notifications) {
+                    seller.notifications = [];
+                }
+                seller.notifications.push({
+                    type: 'purchase_approved',
+                    message: `You approved the purchase request for ${land.title}. Waiting for payment.`,
+                    landId: land._id
+                });
+                await seller.save();
+                console.log('Notification added for seller');
+            }
+        } catch (sellerError) {
+            console.error('Error adding seller notification:', sellerError);
+            // Continue even if notification fails
+        }
+
+        res.json({ 
+            message: 'Purchase request approved successfully',
+            request: {
+                ...purchaseRequest.toObject(),
+                status: 'approved'
+            }
+        });
     } catch (error) {
         console.error('Approve purchase error:', error);
         res.status(500).json({ 
             message: 'Error approving purchase request',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Handle payment and transfer ownership
+exports.completePurchase = async (req, res) => {
+    try {
+        console.log('Completing purchase:', {
+            landId: req.params.id,
+            requestId: req.params.requestId,
+            transactionHash: req.body.transactionHash
+        });
+
+        // Find land and populate necessary fields
+        const land = await Land.findById(req.params.id)
+            .populate('owner', 'name email walletAddress')
+            .populate('purchaseRequests.buyer', 'name email walletAddress');
+
+        if (!land) {
+            console.log('Land not found');
+            return res.status(404).json({ message: 'Land not found' });
+        }
+
+        // Find the purchase request
+        const purchaseRequest = land.purchaseRequests.id(req.params.requestId);
+        if (!purchaseRequest) {
+            console.log('Purchase request not found');
+            return res.status(404).json({ message: 'Purchase request not found' });
+        }
+
+        if (purchaseRequest.status !== 'approved') {
+            console.log('Purchase request is not approved');
+            return res.status(400).json({ message: 'Purchase request is not approved' });
+        }
+
+        // Get buyer's details
+        const buyer = await User.findById(purchaseRequest.buyer);
+        if (!buyer || !buyer.walletAddress) {
+            console.log('Buyer or buyer wallet address not found');
+            return res.status(400).json({ message: 'Buyer wallet address not found' });
+        }
+
+        // Store the original owner before updating
+        const originalOwner = land.owner;
+        console.log('Original owner:', originalOwner._id);
+
+        // Update land ownership in database first
+        try {
+            land.owner = purchaseRequest.buyer;
+            land.isForSale = false;
+            purchaseRequest.status = 'completed';
+            await land.save();
+            console.log('Land ownership updated in database');
+        } catch (saveError) {
+            console.error('Error saving land ownership:', saveError);
+            return res.status(500).json({ message: 'Error updating land ownership' });
+        }
+
+        // Verify payment on blockchain if available
+        if (provider && contract && land.blockchainId) {
+            try {
+                const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+                const contractWithSigner = contract.connect(signer);
+
+                // Verify the transaction
+                const tx = await provider.getTransaction(req.body.transactionHash);
+                if (!tx) {
+                    console.log('Invalid transaction hash');
+                    return res.status(400).json({ message: 'Invalid transaction hash' });
+                }
+
+                // Transfer ownership on blockchain
+                console.log('Transferring ownership on blockchain...');
+                const transferTx = await contractWithSigner.transferLand(
+                    land.blockchainId,
+                    buyer.walletAddress
+                );
+                await transferTx.wait();
+                console.log('Blockchain ownership transfer completed');
+            } catch (blockchainError) {
+                console.error('Blockchain error:', blockchainError);
+                // Continue even if blockchain fails
+                console.log('Continuing with notifications even if blockchain fails');
+            }
+        }
+
+        // Add notification for buyer
+        try {
+            if (!buyer.notifications) {
+                buyer.notifications = [];
+            }
+            buyer.notifications.push({
+                type: 'ownership_transferred',
+                message: `Payment successful! You are now the owner of ${land.title}.`,
+                landId: land._id
+            });
+            await buyer.save();
+            console.log('Notification added for buyer');
+        } catch (buyerError) {
+            console.error('Error adding buyer notification:', buyerError);
+            // Continue even if notification fails
+        }
+
+        // Add notification for seller (original owner)
+        try {
+            const seller = await User.findById(originalOwner._id);
+            if (seller) {
+                if (!seller.notifications) {
+                    seller.notifications = [];
+                }
+                seller.notifications.push({
+                    type: 'payment_successful',
+                    message: `Payment received for ${land.title}. Please transfer ownership to ${buyer.name}.`,
+                    landId: land._id
+                });
+                await seller.save();
+                console.log('Notification added for seller');
+            } else {
+                console.log('Seller not found for notification');
+            }
+        } catch (sellerError) {
+            console.error('Error adding seller notification:', sellerError);
+            // Continue even if notification fails
+        }
+
+        // Add a second notification for seller to confirm ownership transfer
+        try {
+            const seller = await User.findById(originalOwner._id);
+            if (seller) {
+                if (!seller.notifications) {
+                    seller.notifications = [];
+                }
+                seller.notifications.push({
+                    type: 'ownership_transferred',
+                    message: `Ownership of ${land.title} has been transferred to ${buyer.name}.`,
+                    landId: land._id
+                });
+                await seller.save();
+                console.log('Ownership transfer notification added for seller');
+            }
+        } catch (sellerError) {
+            console.error('Error adding ownership transfer notification:', sellerError);
+            // Continue even if notification fails
+        }
+
+        res.json({ 
+            message: 'Purchase completed successfully',
+            land: {
+                id: land._id,
+                title: land.title,
+                newOwner: buyer.name,
+                oldOwner: originalOwner.name
+            }
+        });
+    } catch (error) {
+        console.error('Complete purchase error:', error);
+        res.status(500).json({ 
+            message: 'Error completing purchase',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }

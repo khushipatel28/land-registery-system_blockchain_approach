@@ -15,16 +15,39 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    role: {
-        type: String,
-        enum: ['buyer', 'seller'],
-        default: 'buyer'
-    },
     walletAddress: {
         type: String,
         required: true,
         unique: true
     },
+    role: {
+        type: String,
+        enum: ['buyer', 'seller'],
+        required: true
+    },
+    notifications: [{
+        type: {
+            type: String,
+            enum: ['purchase_approved', 'payment_successful', 'ownership_transferred'],
+            required: true
+        },
+        message: {
+            type: String,
+            required: true
+        },
+        landId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Land'
+        },
+        isRead: {
+            type: Boolean,
+            default: false
+        },
+        timestamp: {
+            type: Date,
+            default: Date.now
+        }
+    }],
     createdAt: {
         type: Date,
         default: Date.now
