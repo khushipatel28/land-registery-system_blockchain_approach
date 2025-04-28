@@ -33,14 +33,6 @@ const Navbar = () => {
                 >
                   Dashboard
                 </Link>
-                {user.role === 'seller' && (
-                  <Link
-                    to="/register-land"
-                    className="text-gray-600 hover:text-gray-800"
-                  >
-                    Register Land
-                  </Link>
-                )}
                 {user.role === 'inspector' && (
                   <Link
                     to="/inspector"

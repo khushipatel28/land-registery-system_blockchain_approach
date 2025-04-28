@@ -39,6 +39,24 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
+// Get land images
+router.get('/:id/images/:index', auth, async (req, res, next) => {
+    try {
+        await landController.getLandImage(req, res);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Get land document
+router.get('/:id/document', auth, async (req, res, next) => {
+    try {
+        await landController.getLandDocument(req, res);
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Request purchase of land
 router.post('/:id/purchase', auth, async (req, res, next) => {
     try {

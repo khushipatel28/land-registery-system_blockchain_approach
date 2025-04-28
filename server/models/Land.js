@@ -26,6 +26,28 @@ const landSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    images: {
+        type: [String], // Array of image filenames
+        required: true,
+        validate: [
+            {
+                validator: function(v) {
+                    return v.length > 0; // At least one image required
+                },
+                message: 'At least one image is required'
+            },
+            {
+                validator: function(v) {
+                    return v.length <= 5; // Maximum 5 images
+                },
+                message: 'Maximum 5 images allowed'
+            }
+        ]
+    },
+    document: {
+        type: String, // Document filename
+        required: true
+    },
     blockchainId: {
         type: Number,
         default: 0
@@ -37,14 +59,6 @@ const landSchema = new mongoose.Schema({
     isForSale: {
         type: Boolean,
         default: true
-    },
-    imageHash: {
-        type: String,
-        required: true
-    },
-    documentHash: {
-        type: String,
-        required: true
     },
     purchaseRequests: [{
         buyer: {

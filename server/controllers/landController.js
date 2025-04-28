@@ -5,6 +5,7 @@ const { ethers } = require('ethers');
 const path = require('path');
 const LandRegistry = require(path.join(__dirname, '../../blockchain/artifacts/contracts/LandRegistry.sol/LandRegistry.json'));
 const User = require('../models/User');
+const fs = require('fs');
 
 // Initialize IPFS client
 let ipfs;
@@ -50,20 +51,38 @@ exports.registerLand = async (req, res) => {
         const { title, description, location, size, price, walletAddress } = req.body;
         const owner = req.user.userId;
 
+        // Log the received data
+        console.log('Registering new land:', {
+            title,
+            description,
+            location,
+            size,
+            price,
+            hasImages: !!req.files?.images,
+            hasDocument: !!req.files?.document,
+            files: req.files
+        });
+
         // Validate required fields
-        if (!title || !description || !location || !size || !price || !req.files?.image || !req.files?.document || !walletAddress) {
+        const missingFields = {
+            title: !title,
+            description: !description,
+            location: !location,
+            size: !size,
+            price: !price,
+            images: !req.files?.images,
+            document: !req.files?.document,
+            walletAddress: !walletAddress
+        };
+
+        const missingFieldNames = Object.entries(missingFields)
+            .filter(([_, isMissing]) => isMissing)
+            .map(([fieldName, _]) => fieldName);
+
+        if (missingFieldNames.length > 0) {
             return res.status(400).json({ 
-                message: 'All fields are required',
-                missing: {
-                    title: !title,
-                    description: !description,
-                    location: !location,
-                    size: !size,
-                    price: !price,
-                    image: !req.files?.image,
-                    document: !req.files?.document,
-                    walletAddress: !walletAddress
-                }
+                message: 'Missing required fields: ' + missingFieldNames.join(', '),
+                missingFields
             });
         }
 
@@ -85,7 +104,8 @@ exports.registerLand = async (req, res) => {
         }
 
         // Verify that the wallet address matches the one used during registration
-        if (ownerUser.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+        const isWalletMatch = ownerUser.walletAddress.toLowerCase() === walletAddress.toLowerCase();
+        if (!isWalletMatch) {
             return res.status(403).json({ 
                 message: 'Wallet address mismatch. Please use the same wallet address that you used during registration.',
                 registeredAddress: ownerUser.walletAddress,
@@ -93,74 +113,9 @@ exports.registerLand = async (req, res) => {
             });
         }
 
-        console.log('Registering land with details:', {
-            title,
-            description,
-            location,
-            size,
-            price,
-            owner: ownerUser.walletAddress
-        });
-
-        let blockchainId = null;
-
-        // Try to register on blockchain if available
-        if (provider && contract) {
-            try {
-                // Check if contract is properly initialized
-                const contractAddress = await contract.address;
-                console.log('Contract address:', contractAddress);
-
-                // Check if contract has the required function
-                const contractFunctions = Object.keys(contract.functions);
-                console.log('Available contract functions:', contractFunctions);
-
-                if (!contractFunctions.includes('registerLand')) {
-                    throw new Error('registerLand function not found in contract');
-                }
-
-                const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-                const contractWithSigner = contract.connect(signer);
-                
-                // Generate document hash
-                const documentHash = Buffer.from(req.files.document[0].buffer).toString('base64').slice(0, 32);
-                
-                console.log('Sending transaction to blockchain...');
-                console.log('Transaction parameters:', {
-                    location,
-                    size,
-                    price: ethers.utils.parseEther(price.toString()),
-                    documentHash
-                });
-
-                const tx = await contractWithSigner.registerLand(
-                    location,
-                    size,
-                    ethers.utils.parseEther(price.toString()),
-                    documentHash
-                );
-                console.log('Transaction sent:', tx.hash);
-                
-                console.log('Waiting for transaction confirmation...');
-                const receipt = await tx.wait();
-                console.log('Transaction confirmed:', receipt);
-
-                // Get the land ID from the blockchain
-                const landCount = await contractWithSigner.landCount();
-                blockchainId = landCount.toNumber();
-                console.log('Land registered on blockchain with ID:', blockchainId);
-            } catch (blockchainError) {
-                console.error('Blockchain error:', blockchainError);
-                // Continue with database registration even if blockchain fails
-                console.log('Continuing with database registration only');
-            }
-        } else {
-            console.log('Blockchain not available, proceeding with database registration only');
-        }
-
-        // Generate hashes for both image and document
-        const imageHash = Buffer.from(req.files.image[0].buffer).toString('base64').slice(0, 32);
-        const documentHash = Buffer.from(req.files.document[0].buffer).toString('base64').slice(0, 32);
+        // Get filenames from uploaded files
+        const imageFilenames = req.files.images.map(file => file.filename);
+        const documentFilename = req.files.document[0].filename;
 
         // Save land in database
         const land = new Land({
@@ -170,18 +125,47 @@ exports.registerLand = async (req, res) => {
             size,
             price,
             owner,
-            blockchainId: blockchainId || 0, // Use 0 if blockchain registration failed
-            isVerified: true, // Set to true since we're using blockchain verification
-            imageHash,
-            documentHash
+            images: imageFilenames,
+            document: documentFilename,
+            isVerified: isWalletMatch // Set to true if wallet addresses match
         });
 
         await land.save();
-        console.log('Land saved to database');
+        console.log('Land saved to database with ID:', land._id);
 
-        res.status(201).json(land);
+        // Return success response
+        res.status(201).json({
+            message: 'Land registered successfully',
+            land: {
+                _id: land._id,
+                title: land.title,
+                description: land.description,
+                location: land.location,
+                size: land.size,
+                price: land.price,
+                images: land.images,
+                document: land.document,
+                owner: land.owner,
+                isVerified: land.isVerified
+            }
+        });
     } catch (error) {
         console.error('Land registration error:', error);
+        // Clean up uploaded files if database save fails
+        if (req.files) {
+            try {
+                if (req.files.images) {
+                    req.files.images.forEach(file => {
+                        fs.unlinkSync(file.path);
+                    });
+                }
+                if (req.files.document) {
+                    fs.unlinkSync(req.files.document[0].path);
+                }
+            } catch (cleanupError) {
+                console.error('Error cleaning up files:', cleanupError);
+            }
+        }
         res.status(500).json({ 
             message: 'Error registering land',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -828,6 +812,73 @@ exports.rejectPurchase = async (req, res) => {
         console.error('Reject purchase error:', error);
         res.status(500).json({ 
             message: 'Error rejecting purchase request',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get land image
+exports.getLandImage = async (req, res) => {
+    try {
+        const land = await Land.findById(req.params.id);
+        if (!land) {
+            return res.status(404).json({ message: 'Land not found' });
+        }
+
+        const index = parseInt(req.params.index);
+        if (isNaN(index) || index < 0 || index >= land.images.length) {
+            return res.status(400).json({ message: 'Invalid image index' });
+        }
+
+        // Construct the file path
+        const imagePath = path.join(__dirname, '../../uploads', land.images[index]);
+        
+        // Check if file exists
+        if (!fs.existsSync(imagePath)) {
+            return res.status(404).json({ message: 'Image file not found' });
+        }
+
+        // Send the file
+        res.sendFile(imagePath);
+    } catch (error) {
+        console.error('Get land image error:', error);
+        res.status(500).json({ 
+            message: 'Error retrieving land image',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get land document
+exports.getLandDocument = async (req, res) => {
+    try {
+        const land = await Land.findById(req.params.id);
+        if (!land) {
+            return res.status(404).json({ message: 'Land not found' });
+        }
+
+        if (!land.document) {
+            return res.status(404).json({ message: 'No document found for this land' });
+        }
+
+        // Construct the file path
+        const documentPath = path.join(__dirname, '../../uploads', land.document);
+        
+        // Check if file exists
+        if (!fs.existsSync(documentPath)) {
+            return res.status(404).json({ message: 'Document file not found' });
+        }
+
+        // Set headers for file download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="land-document.pdf"`);
+
+        // Send the file
+        res.sendFile(documentPath);
+    } catch (error) {
+        console.error('Get land document error:', error);
+        res.status(500).json({ 
+            message: 'Error retrieving land document',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
