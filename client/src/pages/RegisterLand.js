@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import Web3 from 'web3';
 
 const RegisterLand = () => {
   const navigate = useNavigate();
@@ -19,6 +20,43 @@ const RegisterLand = () => {
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState(null);
   const [documentName, setDocumentName] = useState('');
+  const [walletAddress, setWalletAddress] = useState('');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+
+  useEffect(() => {
+    checkWalletConnection();
+  }, []);
+
+  const checkWalletConnection = async () => {
+    if (window.ethereum) {
+      try {
+        const web3 = new Web3(window.ethereum);
+        const accounts = await web3.eth.getAccounts();
+        if (accounts.length > 0) {
+          setWalletAddress(accounts[0]);
+          setIsWalletConnected(true);
+        }
+      } catch (error) {
+        console.error('Error checking wallet connection:', error);
+      }
+    }
+  };
+
+  const connectWallet = async () => {
+    if (window.ethereum) {
+      try {
+        const web3 = new Web3(window.ethereum);
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        setWalletAddress(accounts[0]);
+        setIsWalletConnected(true);
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+        setError('Failed to connect wallet. Please try again.');
+      }
+    } else {
+      setError('Please install MetaMask to use this feature.');
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -66,6 +104,13 @@ const RegisterLand = () => {
         return;
       }
 
+      // Check wallet connection
+      if (!isWalletConnected) {
+        setError('Please connect your wallet first');
+        setLoading(false);
+        return;
+      }
+
       // Validate files
       if (!formData.image || !formData.document) {
         setError('Please upload both an image and a document');
@@ -82,6 +127,7 @@ const RegisterLand = () => {
       formDataToSend.append('price', formData.price);
       formDataToSend.append('image', formData.image);
       formDataToSend.append('document', formData.document);
+      formDataToSend.append('walletAddress', walletAddress);
 
       const response = await axios.post('http://localhost:5000/api/lands/register', formDataToSend, {
         headers: {
@@ -121,6 +167,33 @@ const RegisterLand = () => {
             {error}
           </div>
         )}
+
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold">Wallet Connection</h2>
+              {isWalletConnected ? (
+                <p className="text-sm text-gray-600">
+                  Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                </p>
+              ) : (
+                <p className="text-sm text-red-500">Not connected</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={connectWallet}
+              disabled={isWalletConnected}
+              className={`px-4 py-2 rounded-lg ${
+                isWalletConnected
+                  ? 'bg-green-500 text-white cursor-not-allowed'
+                  : 'bg-blue-500 text-white hover:bg-blue-600'
+              }`}
+            >
+              {isWalletConnected ? 'Connected' : 'Connect Wallet'}
+            </button>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-6">
           <div className="space-y-4">

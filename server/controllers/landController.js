@@ -47,11 +47,11 @@ try {
 // Register new land
 exports.registerLand = async (req, res) => {
     try {
-        const { title, description, location, size, price } = req.body;
+        const { title, description, location, size, price, walletAddress } = req.body;
         const owner = req.user.userId;
 
         // Validate required fields
-        if (!title || !description || !location || !size || !price || !req.files?.image || !req.files?.document) {
+        if (!title || !description || !location || !size || !price || !req.files?.image || !req.files?.document || !walletAddress) {
             return res.status(400).json({ 
                 message: 'All fields are required',
                 missing: {
@@ -61,7 +61,8 @@ exports.registerLand = async (req, res) => {
                     size: !size,
                     price: !price,
                     image: !req.files?.image,
-                    document: !req.files?.document
+                    document: !req.files?.document,
+                    walletAddress: !walletAddress
                 }
             });
         }
@@ -74,13 +75,22 @@ exports.registerLand = async (req, res) => {
             return res.status(400).json({ message: 'Price must be a positive number' });
         }
 
-        // Get owner's wallet address
+        // Get owner's wallet address from database
         const ownerUser = await User.findById(owner);
         if (!ownerUser) {
             return res.status(400).json({ message: 'User not found' });
         }
         if (!ownerUser.walletAddress) {
             return res.status(400).json({ message: 'User wallet address not found' });
+        }
+
+        // Verify that the wallet address matches the one used during registration
+        if (ownerUser.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ 
+                message: 'Wallet address mismatch. Please use the same wallet address that you used during registration.',
+                registeredAddress: ownerUser.walletAddress,
+                providedAddress: walletAddress
+            });
         }
 
         console.log('Registering land with details:', {
