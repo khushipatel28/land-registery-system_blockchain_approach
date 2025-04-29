@@ -8,7 +8,7 @@ const auth = require('../middleware/auth');
 // Register new user
 router.post('/register', async (req, res) => {
     try {
-        const { name, email, password, walletAddress } = req.body;
+        const { name, email, password, walletAddress, role = 'buyer' } = req.body;
 
         // Validate required fields
         if (!name || !email || !password || !walletAddress) {
@@ -24,29 +24,37 @@ router.post('/register', async (req, res) => {
         }
 
         // Check if user already exists
-        let user = await User.findOne({ email });
+        let user = await User.findOne({ 
+            $or: [
+                { email: email.toLowerCase() },
+                { walletAddress: walletAddress.toLowerCase() }
+            ]
+        });
+
         if (user) {
-            return res.status(400).json({ message: 'User already exists' });
+            if (user.email.toLowerCase() === email.toLowerCase()) {
+                return res.status(400).json({ message: 'Email already registered' });
+            }
+            if (user.walletAddress.toLowerCase() === walletAddress.toLowerCase()) {
+                return res.status(400).json({ message: 'Wallet address already registered' });
+            }
         }
 
         // Create new user
         user = new User({
             name,
-            email,
+            email: email.toLowerCase(),
             password,
-            walletAddress
+            walletAddress: walletAddress.toLowerCase(),
+            role
         });
 
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(password, salt);
-
-        // Save user
+        // Save user (password will be hashed by the pre-save middleware)
         await user.save();
 
         // Create JWT token
         const token = jwt.sign(
-            { userId: user._id },
+            { userId: user._id, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -57,7 +65,8 @@ router.post('/register', async (req, res) => {
                 id: user._id,
                 name: user.name,
                 email: user.email,
-                walletAddress: user.walletAddress
+                walletAddress: user.walletAddress,
+                role: user.role
             }
         });
     } catch (error) {
@@ -86,20 +95,20 @@ router.post('/login', async (req, res) => {
         }
 
         // Check if user exists
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // Validate password
-        const isMatch = await bcrypt.compare(password, user.password);
+        // Validate password using the model's method
+        const isMatch = await user.comparePassword(password);
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
         // Create JWT token
         const token = jwt.sign(
-            { userId: user._id },
+            { userId: user._id, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );

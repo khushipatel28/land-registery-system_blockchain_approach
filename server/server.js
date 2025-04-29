@@ -17,9 +17,12 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:3000', // Allow frontend to access
-  credentials: true
+    origin: 'http://localhost:3000',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -27,33 +30,33 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
 const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Allow images
-    if (file.fieldname === 'image') {
-      if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-      } else {
-        cb(new Error('Only image files are allowed for the image field'));
-      }
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        // Allow images
+        if (file.fieldname === 'image') {
+            if (file.mimetype.startsWith('image/')) {
+                cb(null, true);
+            } else {
+                cb(new Error('Only image files are allowed for the image field'));
+            }
+        }
+        // Allow documents
+        else if (file.fieldname === 'document') {
+            if (file.mimetype === 'application/pdf' || 
+                file.mimetype === 'application/msword' || 
+                file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                cb(null, true);
+            } else {
+                cb(new Error('Only PDF and Word documents are allowed for the document field'));
+            }
+        }
+        else {
+            cb(new Error('Invalid field name'));
+        }
     }
-    // Allow documents
-    else if (file.fieldname === 'document') {
-      if (file.mimetype === 'application/pdf' || 
-          file.mimetype === 'application/msword' || 
-          file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        cb(null, true);
-      } else {
-        cb(new Error('Only PDF and Word documents are allowed for the document field'));
-      }
-    }
-    else {
-      cb(new Error('Invalid field name'));
-    }
-  }
 });
 
 // Verify blockchain connection
@@ -129,7 +132,7 @@ app.use('/api/users', userRoutes);
 app.use((err, req, res, next) => {
     console.error('Error details:', {
         message: err.message,
-        stack: err.stack,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
         name: err.name,
         code: err.code
     });
@@ -175,4 +178,6 @@ app.use((err, req, res, next) => {
         message: 'Something went wrong!',
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
-}); 
+});
+
+module.exports = app; 

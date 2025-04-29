@@ -270,6 +270,14 @@ const BuyerDashboard = () => {
                       </p>
                     </div>
 
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/land/${land._id}`)}
+                        className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        View Details
+                      </button>
+
                     {land.purchaseRequests?.some(req => 
                       req.buyer === user._id && req.status === 'approved'
                     ) ? (
@@ -281,7 +289,7 @@ const BuyerDashboard = () => {
                           land.owner.walletAddress
                         )}
                         disabled={paymentStatus[land._id] === 'processing'}
-                        className={`w-full ${
+                        className={`flex-1 ${
                           paymentStatus[land._id] === 'processing'
                             ? 'bg-gray-400'
                             : paymentStatus[land._id] === 'success'
@@ -298,11 +306,12 @@ const BuyerDashboard = () => {
                     ) : (
                       <button
                         onClick={() => handlePurchaseRequest(land._id)}
-                        className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                        className="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors"
                       >
                         Request Purchase
                       </button>
                     )}
+                    </div>
                   </div>
                 </motion.div>
               ))}
