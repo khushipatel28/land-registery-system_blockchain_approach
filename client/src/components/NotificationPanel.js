@@ -33,12 +33,20 @@ const NotificationPanel = () => {
   const markAsRead = async (notificationId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/users/notifications/${notificationId}/read`, {}, {
+      await axios.patch(`http://localhost:5000/api/users/notifications/${notificationId}`, {
+        isRead: true
+      }, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
-      fetchNotifications();
+      setNotifications(prevNotifications =>
+        prevNotifications.map(notification =>
+          notification._id === notificationId
+            ? { ...notification, isRead: true }
+            : notification
+        )
+      );
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -71,8 +79,8 @@ const NotificationPanel = () => {
           {notifications.map((notification) => (
             <div
               key={notification._id}
-              className={`p-4 rounded-lg ${
-                notification.isRead ? 'bg-gray-50' : 'bg-blue-50'
+              className={`p-4 rounded-lg transition-colors duration-300 ${
+                notification.isRead ? 'bg-white' : 'bg-blue-50'
               }`}
             >
               <div className="flex justify-between items-start">

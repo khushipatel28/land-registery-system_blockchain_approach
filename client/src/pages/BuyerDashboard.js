@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import NotificationPanel from '../components/NotificationPanel';
 import { ethers } from 'ethers';
+import { FiBell } from 'react-icons/fi';
 
 const BuyerDashboard = () => {
   const { user } = useAuth();
@@ -319,9 +320,30 @@ const BuyerDashboard = () => {
           )}
         </div>
 
-        <div className="md:col-span-1">
-          <NotificationPanel />
-        </div>
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.5 }}
+          className="md:col-span-1"
+        >
+          <div className="sticky top-24">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800 pl-2 border-l-4 border-blue-500 flex items-center">
+                <FiBell className="mr-2 text-blue-500" /> Notifications
+              </h2>
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                New
+              </span>
+            </div>
+            
+            {/* Scrollable Notification Panel */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
+              <div className="h-[calc(100vh-200px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                <NotificationPanel />
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

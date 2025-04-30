@@ -12,4 +12,7 @@ router.put('/profile', auth, userController.updateProfile);
 // Get user notifications
 router.get('/notifications', auth, userController.getNotifications);
 
+// Update notification read status
+router.patch('/notifications/:notificationId', auth, userController.markNotificationAsRead);
+
 module.exports = router; 
