@@ -6,8 +6,8 @@ const fs = require('fs');
 const landController = require('../controllers/landController');
 const auth = require('../middleware/auth');
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../../uploads');
+// Use the same uploads directory as defined in server.js
+const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }

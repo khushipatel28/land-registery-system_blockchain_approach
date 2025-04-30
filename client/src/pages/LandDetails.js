@@ -16,45 +16,15 @@ const LandDetails = () => {
   const [requestSent, setRequestSent] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [imageLoadError, setImageLoadError] = useState({});
-  const [imageUrls, setImageUrls] = useState([]);
-  const [imageLoadingStates, setImageLoadingStates] = useState({});
   const [documentLoading, setDocumentLoading] = useState(false);
   const [documentError, setDocumentError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch image data for a specific index
-  const fetchImageData = useCallback(async (index) => {
-    try {
-      setImageLoadingStates(prev => ({ ...prev, [index]: true }));
-      
-      const token = localStorage.getItem('token');
-      const imageUrl = `http://localhost:5000/api/lands/${id}/images/${index}`;
-      
-      // Set the image URL directly
-      setImageUrls(prev => {
-        const newUrls = [...prev];
-        newUrls[index] = imageUrl;
-        return newUrls;
-      });
-      
-      setImageLoadError(prev => ({...prev, [index]: false}));
-      setImageLoadingStates(prev => ({ ...prev, [index]: false }));
-    } catch (error) {
-      console.error('Error loading image:', error);
-      setImageLoadError(prev => ({...prev, [index]: true}));
-      setImageLoadingStates(prev => ({ ...prev, [index]: false }));
+  const handleImageError = (e) => {
+    if (!e.target.src.includes('fallback.jpg')) {
+      e.target.src = '/fallback.jpg';
     }
-  }, [id]);
-
-  // Clean up function to revoke object URLs
-  useEffect(() => {
-    return () => {
-      imageUrls.forEach(url => {
-        if (url) URL.revokeObjectURL(url);
-      });
-    };
-  }, [imageUrls]);
+  };
 
   const fetchLandDetails = useCallback(async () => {
     try {
@@ -67,25 +37,13 @@ const LandDetails = () => {
         }
       });
       setLand(response.data);
-      
-      // If land has images, fetch them
-      if (response.data.images && response.data.images.length > 0) {
-        console.log(`Found ${response.data.images.length} images, starting fetch...`);
-        // Initialize arrays for the right number of images
-        setImageUrls(new Array(response.data.images.length).fill(null));
-        
-        // Fetch each image
-        response.data.images.forEach((_, index) => {
-          fetchImageData(index);
-        });
-      }
     } catch (error) {
       console.error('Error fetching land details:', error);
       setError(error.response?.data?.message || 'Error fetching land details. Please try again later.');
     } finally {
       setLoading(false);
     }
-  }, [id, fetchImageData]);
+  }, [id]);
 
   useEffect(() => {
     if (!user) {
@@ -117,12 +75,30 @@ const LandDetails = () => {
   };
 
   const handlePrevImage = () => {
-    setCurrentImageIndex((prev) => (prev === 0 ? (land.images.length - 1) : prev - 1));
+    setCurrentImageIndex((prev) => (prev === 0 ? land.images.length - 1 : prev - 1));
   };
 
   const handleNextImage = () => {
-    setCurrentImageIndex((prev) => (prev === (land.images.length - 1) ? 0 : prev + 1));
+    setCurrentImageIndex((prev) => (prev === land.images.length - 1 ? 0 : prev + 1));
   };
+
+  const handleKeyPress = useCallback((e) => {
+    if (!showImageModal) return;
+    
+    if (e.key === 'ArrowLeft') {
+      handlePrevImage();
+    } else if (e.key === 'ArrowRight') {
+      handleNextImage();
+    } else if (e.key === 'Escape') {
+      setShowImageModal(false);
+    }
+  }, [showImageModal]);
+
+  // Add keyboard navigation
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [handleKeyPress]);
 
   const handleDownloadDocument = async () => {
     try {
@@ -339,46 +315,17 @@ const LandDetails = () => {
         </div>
         
         {/* Image Gallery */}
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white rounded-xl shadow-lg overflow-hidden mb-8"
-        >
+        <motion.div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
           <div className="relative aspect-w-16 aspect-h-9 h-96">
             {land?.images && land.images.length > 0 ? (
               <>
-                {imageLoadingStates[currentImageIndex] && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                  </div>
-                )}
-                
-                {imageUrls[currentImageIndex] && !imageLoadError[currentImageIndex] && (
-                  <img
-                    src={imageUrls[currentImageIndex]}
-                    alt={`Land ${currentImageIndex + 1}`}
-                    className="w-full h-full object-cover cursor-pointer"
-                    onClick={() => setShowImageModal(true)}
-                  />
-                )}
-                
-                {imageLoadError[currentImageIndex] && (
-                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                    <div className="text-center">
-                      <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p className="mt-2 text-gray-500">Failed to load image</p>
-                      <button 
-                        onClick={() => fetchImageData(currentImageIndex)}
-                        className="mt-2 text-blue-500 hover:text-blue-700"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <img
+                  src={`http://localhost:5000/uploads/${land.images[currentImageIndex]}`}
+                  alt={`Land ${currentImageIndex + 1}`}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => setShowImageModal(true)}
+                  onError={handleImageError}
+                />
                 
                 {land.images.length > 1 && (
                   <>
@@ -430,35 +377,19 @@ const LandDetails = () => {
           {land?.images && land.images.length > 1 && (
             <div className="p-4 border-t border-gray-100">
               <div className="flex space-x-4 overflow-x-auto py-2">
-                {land.images.map((_, index) => (
+                {land.images.map((img, index) => (
                   <div key={index} className="relative flex-shrink-0">
-                    {imageLoadingStates[index] && (
-                      <div className="h-20 w-20 bg-gray-100 flex items-center justify-center rounded-lg">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                      </div>
-                    )}
-                    
-                    {imageUrls[index] && !imageLoadError[index] && (
-                      <img
-                        src={imageUrls[index]}
-                        alt={`Thumbnail ${index + 1}`}
-                        className={`h-20 w-20 object-cover rounded-lg cursor-pointer transition-all ${
-                          index === currentImageIndex 
-                            ? 'ring-2 ring-blue-500 scale-105' 
-                            : 'opacity-70 hover:opacity-100'
-                        }`}
-                        onClick={() => setCurrentImageIndex(index)}
-                      />
-                    )}
-                    
-                    {imageLoadError[index] && (
-                      <div className="h-20 w-20 bg-gray-100 flex items-center justify-center rounded-lg cursor-pointer"
-                           onClick={() => fetchImageData(index)}>
-                        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </div>
-                    )}
+                    <img
+                      src={`http://localhost:5000/uploads/${img}`}
+                      alt={`Thumbnail ${index + 1}`}
+                      className={`h-20 w-20 object-cover rounded-lg cursor-pointer transition-all ${
+                        index === currentImageIndex 
+                          ? 'ring-2 ring-blue-500 scale-105' 
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      onClick={() => setCurrentImageIndex(index)}
+                      onError={handleImageError}
+                    />
                   </div>
                 ))}
               </div>
@@ -569,9 +500,9 @@ const LandDetails = () => {
         </motion.div>
       </motion.div>
 
-      {/* Image Modal */}
+      {/* Enhanced Image Modal */}
       <AnimatePresence>
-        {showImageModal && (
+        {showImageModal && land?.images && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -584,72 +515,91 @@ const LandDetails = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="relative max-w-7xl mx-auto"
+              className="relative max-w-7xl mx-auto w-full"
               onClick={(e) => e.stopPropagation()}
             >
-              {imageUrls[currentImageIndex] ? (
-                <img
-                  src={imageUrls[currentImageIndex]}
-                  alt={`Land ${currentImageIndex + 1}`}
-                  className="max-h-[80vh] max-w-full mx-auto rounded-lg"
-                />
-              ) : (
-                <div className="w-full h-80 bg-gray-800 flex items-center justify-center rounded-lg">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white"></div>
-                </div>
-              )}
-              
+              {/* Close button */}
               <button
-                className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+                className="absolute top-4 right-4 z-10 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
                 onClick={() => setShowImageModal(false)}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
-              
-              {land.images && land.images.length > 1 && (
-                <>
-                  <button
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/30 hover:bg-black/50 text-white p-3 rounded-full"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePrevImage();
-                    }}
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/30 hover:bg-black/50 text-white p-3 rounded-full"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNextImage();
-                    }}
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                  
-                  <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-3">
-                    {land.images.map((_, index) => (
-                      <button
-                        key={index}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentImageIndex(index);
-                        }}
-                        className={`w-4 h-4 rounded-full transition-transform ${
-                          index === currentImageIndex 
-                            ? 'bg-white scale-125' 
-                            : 'bg-white/40 hover:bg-white/70'
-                        }`}
-                      />
-                    ))}
+
+              {/* Main Image */}
+              <div className="relative">
+                <img
+                  src={`http://localhost:5000/uploads/${land.images[currentImageIndex]}`}
+                  alt={`Land ${currentImageIndex + 1}`}
+                  className="max-h-[80vh] max-w-full mx-auto rounded-lg"
+                  onError={handleImageError}
+                />
+
+                {/* Image counter */}
+                <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                  {currentImageIndex + 1} / {land.images.length}
+                </div>
+
+                {/* Navigation arrows */}
+                {land.images.length > 1 && (
+                  <>
+                    <button
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-3 rounded-full hover:bg-black/70 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePrevImage();
+                      }}
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-3 rounded-full hover:bg-black/70 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNextImage();
+                      }}
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Thumbnail strip */}
+              {land.images.length > 1 && (
+                <div className="absolute bottom-4 left-0 right-0">
+                  <div className="flex justify-center items-center space-x-2 px-4">
+                    <div className="flex space-x-2 overflow-x-auto py-2 max-w-full scrollbar-hide">
+                      {land.images.map((img, index) => (
+                        <button
+                          key={index}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCurrentImageIndex(index);
+                          }}
+                          className={`relative flex-shrink-0 ${
+                            index === currentImageIndex ? 'ring-2 ring-blue-500' : ''
+                          }`}
+                        >
+                          <img
+                            src={`http://localhost:5000/uploads/${img}`}
+                            alt={`Thumbnail ${index + 1}`}
+                            className={`h-16 w-16 object-cover rounded-lg transition-opacity ${
+                              index === currentImageIndex ? 'opacity-100' : 'opacity-50 hover:opacity-75'
+                            }`}
+                            onError={handleImageError}
+                          />
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </>
+                </div>
               )}
             </motion.div>
           </motion.div>

@@ -6,6 +6,7 @@ const path = require('path');
 const { ethers } = require('ethers');
 const LandRegistry = require(path.join(__dirname, '../blockchain/artifacts/contracts/LandRegistry.sol/LandRegistry.json'));
 const multer = require('multer');
+const fs = require('fs');
 const landRoutes = require('./routes/land');
 const userRoutes = require('./routes/user');
 
@@ -25,6 +26,8 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Configure multer for file uploads

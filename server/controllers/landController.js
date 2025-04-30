@@ -7,6 +7,9 @@ const LandRegistry = require(path.join(__dirname, '../../blockchain/artifacts/co
 const User = require('../models/User');
 const fs = require('fs');
 
+// Use the same uploads directory as defined in server.js
+const uploadsDir = path.join(__dirname, '../uploads');
+
 // Initialize IPFS client
 let ipfs;
 try {
@@ -830,8 +833,8 @@ exports.getLandImage = async (req, res) => {
             return res.status(400).json({ message: 'Invalid image index' });
         }
 
-        // Construct the file path
-        const imagePath = path.join(__dirname, '../../uploads', land.images[index]);
+        // Construct the file path using the consistent uploads directory
+        const imagePath = path.join(uploadsDir, land.images[index]);
         
         // Check if file exists
         if (!fs.existsSync(imagePath)) {
@@ -861,8 +864,8 @@ exports.getLandDocument = async (req, res) => {
             return res.status(404).json({ message: 'No document found for this land' });
         }
 
-        // Construct the file path
-        const documentPath = path.join(__dirname, '../../uploads', land.document);
+        // Construct the file path using the consistent uploads directory
+        const documentPath = path.join(uploadsDir, land.document);
         
         // Check if file exists
         if (!fs.existsSync(documentPath)) {
